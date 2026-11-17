@@ -1,12 +1,16 @@
-from rest_framework import generics, permissions, viewsets
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from rest_framework import generics, mixins, permissions, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import HoSo, KhungGioRanh, MonHoc, NhiemVu
+from .models import BuoiHoc, HoSo, KeHoachHocTap, KhungGioRanh, MonHoc, NhiemVu
 from .serializers import (
-    DangKySerializer, HoSoSerializer, KhungGioRanhSerializer,
-    MonHocSerializer, NhiemVuSerializer,
+    BuoiHocSerializer, DangKySerializer, HoSoSerializer, KeHoachSerializer,
+    KhungGioRanhSerializer, MonHocSerializer, NhiemVuSerializer, TaoKeHoachSerializer,
 )
+from .xep_lich import cap_nhat_trang_thai_nhiem_vu, tao_ke_hoach, xep_lai_ke_hoach
 
 
 class DangKyView(generics.CreateAPIView):
@@ -58,7 +62,6 @@ class NhiemVuViewSet(ViewSetCuaToi):
 
     def get_queryset(self):
         ds = super().get_queryset()
-        # Lọc tùy chọn: /api/nhiem-vu/?trang_thai=chua_lam&mon_hoc=1
         trang_thai = self.request.query_params.get('trang_thai')
         mon_hoc = self.request.query_params.get('mon_hoc')
         if trang_thai:
@@ -71,3 +74,60 @@ class NhiemVuViewSet(ViewSetCuaToi):
 class KhungGioRanhViewSet(ViewSetCuaToi):
     queryset = KhungGioRanh.objects.all()
     serializer_class = KhungGioRanhSerializer
+
+
+class KeHoachViewSet(viewsets.ReadOnlyModelViewSet):
+    """Xem kế hoạch; tạo kế hoạch bằng thuật toán; xếp lại lịch."""
+    serializer_class = KeHoachSerializer
+
+    def get_queryset(self):
+        return KeHoachHocTap.objects.filter(nguoi_dung=self.request.user)
+
+    @action(detail=False, methods=['post'], url_path='tao')
+    def tao(self, request):
+        dau_vao = TaoKeHoachSerializer(data=request.data)
+        dau_vao.is_valid(raise_exception=True)
+        ngay_bat_dau = dau_vao.validated_data.get('ngay_bat_dau') or timezone.localdate()
+        ke_hoach, ket_qua = tao_ke_hoach(request.user, ngay_bat_dau, dau_vao.validated_data['so_ngay'])
+        return Response({
+            'ke_hoach': KeHoachSerializer(ke_hoach).data,
+            'khong_xep_duoc': ket_qua['khong_xep_duoc'],
+            'thu_tu_uu_tien': ket_qua['thu_tu_uu_tien'],
+        }, status=201)
+
+    @action(detail=True, methods=['post'], url_path='xep-lai')
+    def xep_lai(self, request, pk=None):
+        ke_hoach = self.get_object()
+        try:
+            ket_qua = xep_lai_ke_hoach(ke_hoach)
+        except ValueError as loi:
+            return Response({'chi_tiet': str(loi)}, status=400)
+        ke_hoach.refresh_from_db()
+        return Response({
+            'ke_hoach': KeHoachSerializer(ke_hoach).data,
+            'khong_xep_duoc': ket_qua['khong_xep_duoc'],
+            'thu_tu_uu_tien': ket_qua['thu_tu_uu_tien'],
+        })
+
+
+class BuoiHocViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
+                     mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    """Xem buổi học (lọc theo ngày/kế hoạch) và đánh dấu hoàn thành/bỏ lỡ bằng PATCH."""
+    serializer_class = BuoiHocSerializer
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        ds = BuoiHoc.objects.filter(
+            ke_hoach__nguoi_dung=self.request.user
+        ).select_related('nhiem_vu__mon_hoc')
+        ke_hoach = self.request.query_params.get('ke_hoach')
+        ngay = parse_date(self.request.query_params.get('ngay', ''))
+        if ke_hoach:
+            ds = ds.filter(ke_hoach_id=ke_hoach)
+        if ngay:
+            ds = ds.filter(thoi_gian_bat_dau__date=ngay)
+        return ds
+
+    def perform_update(self, serializer):
+        buoi = serializer.save()
+        cap_nhat_trang_thai_nhiem_vu(buoi.nhiem_vu)

@@ -127,3 +127,45 @@ class KhungGioRanhSerializer(serializers.ModelSerializer):
         if trung.exists():
             raise serializers.ValidationError('Khung giờ này bị trùng với khung giờ rảnh đã có.')
         return attrs
+
+class BuoiHocSerializer(serializers.ModelSerializer):
+    tieu_de_nhiem_vu = serializers.CharField(source='nhiem_vu.tieu_de', read_only=True)
+    ten_mon = serializers.CharField(source='nhiem_vu.mon_hoc.ten_mon', read_only=True)
+    mau_sac = serializers.CharField(source='nhiem_vu.mon_hoc.mau_sac', read_only=True)
+
+    class Meta:
+        model = BuoiHoc
+        fields = [
+            'id', 'ke_hoach', 'nhiem_vu', 'tieu_de_nhiem_vu', 'ten_mon', 'mau_sac',
+            'thoi_gian_bat_dau', 'thoi_gian_ket_thuc', 'trang_thai',
+        ]
+        # Chỉ cho đổi trạng thái (dự kiến / hoàn thành / bỏ lỡ)
+        read_only_fields = ['ke_hoach', 'nhiem_vu', 'thoi_gian_bat_dau', 'thoi_gian_ket_thuc']
+
+
+class KeHoachSerializer(serializers.ModelSerializer):
+    danh_sach_buoi_hoc = BuoiHocSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = KeHoachHocTap
+        fields = [
+            'id', 'ngay_bat_dau', 'ngay_ket_thuc', 'nguon_tao', 'tom_tat_ai',
+            'ngay_tao', 'danh_sach_buoi_hoc',
+        ]
+
+
+class TaoKeHoachSerializer(serializers.Serializer):
+    ngay_bat_dau = serializers.DateField(required=False)
+    so_ngay = serializers.IntegerField(
+        required=False, default=7, min_value=1, max_value=14,
+        error_messages={
+            'min_value': 'Số ngày phải từ 1 đến 14.',
+            'max_value': 'Số ngày phải từ 1 đến 14.',
+            'invalid': 'Số ngày không hợp lệ.',
+        },
+    )
+
+    def validate_ngay_bat_dau(self, gia_tri):
+        if gia_tri < timezone.localdate():
+            raise serializers.ValidationError('Ngày bắt đầu không được ở trong quá khứ.')
+        return gia_tri
