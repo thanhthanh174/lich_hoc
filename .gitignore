@@ -51,3 +51,5 @@ backend/venv/
 **/__pycache__/
 *.pyc
 .env
+
+backend/db.sqlite3
