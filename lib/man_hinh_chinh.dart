@@ -5,6 +5,8 @@ import 'man_hinh_dang_nhap.dart';
 import 'man_hinh_khung_gio.dart';
 import 'man_hinh_mon_hoc.dart';
 import 'tien_ich.dart';
+import 'man_hinh_nhiem_vu.dart';
+import 'man_hinh_ke_hoach.dart';
 
 class ManHinhChinh extends StatefulWidget {
   const ManHinhChinh({super.key});
@@ -16,9 +18,15 @@ class ManHinhChinh extends StatefulWidget {
 class _ManHinhChinhState extends State<ManHinhChinh> {
   int _chon = 0;
 
-  static const _tieuDe = ['Lịch học thông minh', 'Môn học', 'Khung giờ rảnh'];
+  static const _tieuDe = [
+    'Kế hoạch học tập',
+    'Nhiệm vụ',
+    'Môn học',
+    'Khung giờ rảnh',
+  ];
   static const _cacManHinh = [
-    ManHinhTongQuan(),
+    ManHinhKeHoach(),
+    ManHinhNhiemVu(),
     ManHinhMonHoc(),
     ManHinhKhungGio(),
   ];
@@ -50,7 +58,9 @@ class _ManHinhChinhState extends State<ManHinhChinh> {
         onDestinationSelected: (i) => setState(() => _chon = i),
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.home_outlined), label: 'Tổng quan'),
+              icon: Icon(Icons.event_note_outlined), label: 'Kế hoạch'),
+          NavigationDestination(
+              icon: Icon(Icons.checklist_outlined), label: 'Nhiệm vụ'),
           NavigationDestination(
               icon: Icon(Icons.menu_book_outlined), label: 'Môn học'),
           NavigationDestination(icon: Icon(Icons.schedule), label: 'Giờ rảnh'),

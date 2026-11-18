@@ -163,9 +163,16 @@ class DichVuApi {
     }
     throw LoiApi(_docLoi(res));
   }
-
-  static Future<void> xoa(String duongDan) async {
+  
+ static Future<void> xoa(String duongDan) async {
     final res = await _guiCoToken('DELETE', duongDan);
     if (res.statusCode != 204) throw LoiApi(_docLoi(res));
+  }
+
+  static Future<Map<String, dynamic>> capNhat(
+      String duongDan, Map<String, dynamic> duLieu) async {
+    final res = await _guiCoToken('PATCH', duongDan, duLieu: duLieu);
+    if (res.statusCode == 200) return _giaiMa(res) as Map<String, dynamic>;
+    throw LoiApi(_docLoi(res));
   }
 }
