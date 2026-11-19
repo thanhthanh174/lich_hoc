@@ -18,7 +18,8 @@ class LoiApi implements Exception {
 class DichVuApi {
   static const _khoaAccess = 'access_token';
   static const _khoaRefresh = 'refresh_token';
-  static const _thoiGianCho = Duration(seconds: 15);
+  // 45 giây: Backend có thể chờ AI tới 30 giây nên app phải chờ lâu hơn.
+  static const _thoiGianCho = Duration(seconds: 45);
   static const _loiMang =
       'Không kết nối được máy chủ. Hãy kiểm tra Backend đã chạy chưa.';
 
@@ -163,8 +164,8 @@ class DichVuApi {
     }
     throw LoiApi(_docLoi(res));
   }
-  
- static Future<void> xoa(String duongDan) async {
+
+  static Future<void> xoa(String duongDan) async {
     final res = await _guiCoToken('DELETE', duongDan);
     if (res.statusCode != 204) throw LoiApi(_docLoi(res));
   }

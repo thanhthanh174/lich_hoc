@@ -10,6 +10,9 @@ const Color mauChinh = Color(0xFF039BE5);
 const Color mauNenNhat = Color(0xFFE1F5FE);
 const Color mauNen = Color(0xFFF3F9FD);
 
+// Tên font khai báo trong pubspec.yaml
+const String fontChinh = 'TimesNewRoman';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const UngDung());
@@ -21,6 +24,7 @@ ThemeData _taoGiaoDien() {
 
   return ThemeData(
     useMaterial3: true,
+    fontFamily: fontChinh,
     colorScheme: bangMau,
     scaffoldBackgroundColor: mauNen,
     appBarTheme: const AppBarTheme(
@@ -30,6 +34,7 @@ ThemeData _taoGiaoDien() {
       centerTitle: true,
       systemOverlayStyle: SystemUiOverlayStyle.light,
       titleTextStyle: TextStyle(
+        fontFamily: fontChinh,
         fontSize: 20,
         fontWeight: FontWeight.w600,
         color: Colors.white,
@@ -41,7 +46,8 @@ ThemeData _taoGiaoDien() {
       labelTextStyle: WidgetStateProperty.resolveWith((trangThai) {
         final dangChon = trangThai.contains(WidgetState.selected);
         return TextStyle(
-          fontSize: 12,
+          fontFamily: fontChinh,
+          fontSize: 13,
           fontWeight: dangChon ? FontWeight.w600 : FontWeight.normal,
         );
       }),

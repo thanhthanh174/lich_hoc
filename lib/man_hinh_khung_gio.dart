@@ -44,11 +44,27 @@ class _ManHinhKhungGioState extends State<ManHinhKhungGio> {
 
   Future<void> _them() async {
     final du = await showDialog<Map<String, dynamic>>(
-        context: context, builder: (_) => const _HopThoaiThemGio());
+        context: context, builder: (_) => const _HopThoaiGio());
     if (du == null) return;
     try {
       await DichVuApi.tao('/api/khung-gio-ranh/', du);
       await _tai();
+    } catch (loi) {
+      if (mounted) await xuLyLoi(context, loi);
+    }
+  }
+
+  Future<void> _sua(Map<String, dynamic> khung) async {
+    final du = await showDialog<Map<String, dynamic>>(
+        context: context, builder: (_) => _HopThoaiGio(khung: khung));
+    if (du == null) return;
+    try {
+      await DichVuApi.capNhat('/api/khung-gio-ranh/${khung['id']}/', du);
+      await _tai();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đã cập nhật khung giờ.')));
+      }
     } catch (loi) {
       if (mounted) await xuLyLoi(context, loi);
     }
@@ -101,6 +117,7 @@ class _ManHinhKhungGioState extends State<ManHinhKhungGio> {
       for (final m in cacMuc) {
         ketQua.add(theMuc(
           child: ListTile(
+            onTap: () => _sua(m),
             leading: const CircleAvatar(
               backgroundColor: Color(0xFFE1F5FE),
               child: Icon(Icons.schedule, color: Color(0xFF039BE5)),
@@ -157,7 +174,7 @@ class _ManHinhKhungGioState extends State<ManHinhKhungGio> {
           ? ListView(children: [
               const SizedBox(height: 120),
               trangThaiRong(context, Icons.schedule,
-                  'Chưa có khung giờ rảnh.\nBấm "Thêm giờ rảnh" để cho app biết lúc nào bạn học được.'),
+                  'Chưa có khung giờ rảnh.\nBấm "Thêm giờ rảnh" để cho app biết lúc nào bà học được.'),
             ])
           : ListView(
               padding: const EdgeInsets.only(bottom: 88),
@@ -167,19 +184,46 @@ class _ManHinhKhungGioState extends State<ManHinhKhungGio> {
   }
 }
 
-class _HopThoaiThemGio extends StatefulWidget {
-  const _HopThoaiThemGio();
+/// Hộp thoại dùng chung cho THÊM (khung = null) và SỬA (khung != null).
+class _HopThoaiGio extends StatefulWidget {
+  final Map<String, dynamic>? khung;
+  const _HopThoaiGio({this.khung});
 
   @override
-  State<_HopThoaiThemGio> createState() => _HopThoaiThemGioState();
+  State<_HopThoaiGio> createState() => _HopThoaiGioState();
 }
 
-class _HopThoaiThemGioState extends State<_HopThoaiThemGio> {
+class _HopThoaiGioState extends State<_HopThoaiGio> {
   static const _nhanNgan = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   int _thu = 0;
   TimeOfDay _batDau = const TimeOfDay(hour: 19, minute: 0);
   TimeOfDay _ketThuc = const TimeOfDay(hour: 22, minute: 0);
   String? _loi;
+
+  bool get _laSua => widget.khung != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final k = widget.khung;
+    if (k != null) {
+      final thu = k['thu_trong_tuan'];
+      if (thu is int && thu >= 0 && thu <= 6) _thu = thu;
+      _batDau = _docGio(k['gio_bat_dau'], _batDau);
+      _ketThuc = _docGio(k['gio_ket_thuc'], _ketThuc);
+    }
+  }
+
+  /// Đọc chuỗi "HH:MM:SS" thành TimeOfDay; lỗi thì dùng giá trị mặc định.
+  TimeOfDay _docGio(dynamic s, TimeOfDay macDinh) {
+    if (s is! String) return macDinh;
+    final phan = s.split(':');
+    if (phan.length < 2) return macDinh;
+    final h = int.tryParse(phan[0]);
+    final p = int.tryParse(phan[1]);
+    if (h == null || p == null) return macDinh;
+    return TimeOfDay(hour: h, minute: p);
+  }
 
   Future<void> _chonGio(bool laBatDau) async {
     final chon = await showTimePicker(
@@ -218,7 +262,7 @@ class _HopThoaiThemGioState extends State<_HopThoaiThemGio> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Thêm khung giờ rảnh'),
+      title: Text(_laSua ? 'Sửa khung giờ rảnh' : 'Thêm khung giờ rảnh'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -266,7 +310,7 @@ class _HopThoaiThemGioState extends State<_HopThoaiThemGio> {
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-        FilledButton(onPressed: _luu, child: const Text('Lưu')),
+        FilledButton(onPressed: _luu, child: Text(_laSua ? 'Cập nhật' : 'Lưu')),
       ],
     );
   }

@@ -65,11 +65,37 @@ class _ManHinhNhiemVuState extends State<ManHinhNhiemVu> {
       return;
     }
     final du = await showDialog<Map<String, dynamic>>(
-        context: context, builder: (_) => _HopThoaiThemNhiemVu(dsMon: dsMon));
+        context: context, builder: (_) => _HopThoaiNhiemVu(dsMon: dsMon));
     if (du == null) return;
     try {
       await DichVuApi.tao('/api/nhiem-vu/', du);
       await _tai();
+    } catch (loi) {
+      if (mounted) await xuLyLoi(context, loi);
+    }
+  }
+
+  Future<void> _sua(Map<String, dynamic> nv) async {
+    List<dynamic> dsMon;
+    try {
+      dsMon = await DichVuApi.layDanhSach('/api/mon-hoc/');
+    } catch (loi) {
+      if (mounted) await xuLyLoi(context, loi);
+      return;
+    }
+    if (!mounted) return;
+    if (dsMon.isEmpty) return;
+    final du = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (_) => _HopThoaiNhiemVu(dsMon: dsMon, nhiemVu: nv));
+    if (du == null) return;
+    try {
+      await DichVuApi.capNhat('/api/nhiem-vu/${nv['id']}/', du);
+      await _tai();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đã cập nhật nhiệm vụ.')));
+      }
     } catch (loi) {
       if (mounted) await xuLyLoi(context, loi);
     }
@@ -156,6 +182,7 @@ class _ManHinhNhiemVuState extends State<ManHinhNhiemVu> {
     return theMuc(
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        onTap: () => _sua(nv),
         leading: Checkbox(
           value: daXong,
           onChanged: (_) => _doiTrangThai(nv),
@@ -197,28 +224,49 @@ class _ManHinhNhiemVuState extends State<ManHinhNhiemVu> {
   }
 }
 
-class _HopThoaiThemNhiemVu extends StatefulWidget {
+/// Hộp thoại dùng chung cho THÊM (nhiemVu = null) và SỬA (nhiemVu != null).
+class _HopThoaiNhiemVu extends StatefulWidget {
   final List<dynamic> dsMon;
-  const _HopThoaiThemNhiemVu({required this.dsMon});
+  final Map<String, dynamic>? nhiemVu;
+  const _HopThoaiNhiemVu({required this.dsMon, this.nhiemVu});
 
   @override
-  State<_HopThoaiThemNhiemVu> createState() => _HopThoaiThemNhiemVuState();
+  State<_HopThoaiNhiemVu> createState() => _HopThoaiNhiemVuState();
 }
 
-class _HopThoaiThemNhiemVuState extends State<_HopThoaiThemNhiemVu> {
+class _HopThoaiNhiemVuState extends State<_HopThoaiNhiemVu> {
   final _khoa = GlobalKey<FormState>();
-  final _tieuDe = TextEditingController();
-  final _moTa = TextEditingController();
-  final _thoiLuong = TextEditingController(text: '60');
+  late final TextEditingController _tieuDe;
+  late final TextEditingController _moTa;
+  late final TextEditingController _thoiLuong;
   int? _monId;
   int _quanTrong = 2;
   DateTime? _han;
   String? _loiHan;
 
+  bool get _laSua => widget.nhiemVu != null;
+
   @override
   void initState() {
     super.initState();
-    _monId = (widget.dsMon.first as Map<String, dynamic>)['id'] as int;
+    final nv = widget.nhiemVu;
+    final idDau = (widget.dsMon.first as Map<String, dynamic>)['id'] as int;
+    _tieuDe = TextEditingController(text: (nv?['tieu_de'] as String?) ?? '');
+    _moTa = TextEditingController(text: (nv?['mo_ta'] as String?) ?? '');
+    _thoiLuong = TextEditingController(
+        text: nv == null ? '60' : '${nv['thoi_luong_du_kien']}');
+    _monId = idDau;
+    if (nv != null) {
+      final monCu = nv['mon_hoc'];
+      if (monCu is int) {
+        final coTrongDs = widget.dsMon
+            .any((m) => (m as Map<String, dynamic>)['id'] == monCu);
+        if (coTrongDs) _monId = monCu;
+      }
+      _quanTrong = ((nv['do_quan_trong'] as int?) ?? 2).clamp(1, 3);
+      final hanCu = nv['han_hoan_thanh'] as String?;
+      if (hanCu != null) _han = DateTime.parse(hanCu).toLocal();
+    }
   }
 
   @override
@@ -231,16 +279,23 @@ class _HopThoaiThemNhiemVuState extends State<_HopThoaiThemNhiemVu> {
 
   Future<void> _chonHan() async {
     final bayGio = DateTime.now();
+    var dauMoc = bayGio.subtract(const Duration(days: 1));
+    var cuoiMoc = bayGio.add(const Duration(days: 365));
+    final han = _han;
+    if (han != null && han.isBefore(dauMoc)) dauMoc = han;
+    if (han != null && han.isAfter(cuoiMoc)) cuoiMoc = han;
     final ngay = await showDatePicker(
       context: context,
-      initialDate: _han ?? bayGio,
-      firstDate: bayGio.subtract(const Duration(days: 1)),
-      lastDate: bayGio.add(const Duration(days: 365)),
+      initialDate: han ?? bayGio,
+      firstDate: DateTime(dauMoc.year, dauMoc.month, dauMoc.day),
+      lastDate: DateTime(cuoiMoc.year, cuoiMoc.month, cuoiMoc.day),
     );
     if (ngay == null || !mounted) return;
     final gio = await showTimePicker(
       context: context,
-      initialTime: const TimeOfDay(hour: 23, minute: 59),
+      initialTime: han != null
+          ? TimeOfDay(hour: han.hour, minute: han.minute)
+          : const TimeOfDay(hour: 23, minute: 59),
     );
     if (gio == null) return;
     setState(() {
@@ -252,7 +307,7 @@ class _HopThoaiThemNhiemVuState extends State<_HopThoaiThemNhiemVu> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Thêm nhiệm vụ'),
+      title: Text(_laSua ? 'Sửa nhiệm vụ' : 'Thêm nhiệm vụ'),
       content: Form(
         key: _khoa,
         child: SingleChildScrollView(
@@ -351,7 +406,7 @@ class _HopThoaiThemNhiemVuState extends State<_HopThoaiThemNhiemVu> {
               'do_quan_trong': _quanTrong,
             });
           },
-          child: const Text('Lưu'),
+          child: Text(_laSua ? 'Cập nhật' : 'Lưu'),
         ),
       ],
     );

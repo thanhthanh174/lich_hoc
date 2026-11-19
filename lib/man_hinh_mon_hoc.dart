@@ -49,11 +49,27 @@ class _ManHinhMonHocState extends State<ManHinhMonHoc> {
 
   Future<void> _them() async {
     final du = await showDialog<Map<String, dynamic>>(
-        context: context, builder: (_) => const _HopThoaiThemMon());
+        context: context, builder: (_) => const _HopThoaiMon());
     if (du == null) return;
     try {
       await DichVuApi.tao('/api/mon-hoc/', du);
       await _tai();
+    } catch (loi) {
+      if (mounted) await xuLyLoi(context, loi);
+    }
+  }
+
+  Future<void> _sua(Map<String, dynamic> mon) async {
+    final du = await showDialog<Map<String, dynamic>>(
+        context: context, builder: (_) => _HopThoaiMon(mon: mon));
+    if (du == null) return;
+    try {
+      await DichVuApi.capNhat('/api/mon-hoc/${mon['id']}/', du);
+      await _tai();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đã cập nhật môn học.')));
+      }
     } catch (loi) {
       if (mounted) await xuLyLoi(context, loi);
     }
@@ -120,6 +136,7 @@ class _ManHinhMonHocState extends State<ManHinhMonHoc> {
                   child: ListTile(
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    onTap: () => _sua(mon),
                     leading: CircleAvatar(
                       backgroundColor: mauTuHex(mon['mau_sac'] as String),
                       child: Text(
@@ -144,18 +161,31 @@ class _ManHinhMonHocState extends State<ManHinhMonHoc> {
   }
 }
 
-class _HopThoaiThemMon extends StatefulWidget {
-  const _HopThoaiThemMon();
+/// Hộp thoại dùng chung cho THÊM (mon = null) và SỬA (mon != null).
+class _HopThoaiMon extends StatefulWidget {
+  final Map<String, dynamic>? mon;
+  const _HopThoaiMon({this.mon});
 
   @override
-  State<_HopThoaiThemMon> createState() => _HopThoaiThemMonState();
+  State<_HopThoaiMon> createState() => _HopThoaiMonState();
 }
 
-class _HopThoaiThemMonState extends State<_HopThoaiThemMon> {
+class _HopThoaiMonState extends State<_HopThoaiMon> {
   final _khoa = GlobalKey<FormState>();
-  final _ten = TextEditingController();
-  final _hocKy = TextEditingController();
-  String _mau = _cacMau.first;
+  late final TextEditingController _ten;
+  late final TextEditingController _hocKy;
+  late String _mau;
+
+  bool get _laSua => widget.mon != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final m = widget.mon;
+    _ten = TextEditingController(text: (m?['ten_mon'] as String?) ?? '');
+    _hocKy = TextEditingController(text: (m?['hoc_ky'] as String?) ?? '');
+    _mau = (m?['mau_sac'] as String?) ?? _cacMau.first;
+  }
 
   @override
   void dispose() {
@@ -166,8 +196,10 @@ class _HopThoaiThemMonState extends State<_HopThoaiThemMon> {
 
   @override
   Widget build(BuildContext context) {
+    // Nếu màu cũ không nằm trong bảng màu thì vẫn hiển thị thêm để không mất.
+    final cacMauHienThi = _cacMau.contains(_mau) ? _cacMau : [..._cacMau, _mau];
     return AlertDialog(
-      title: const Text('Thêm môn học'),
+      title: Text(_laSua ? 'Sửa môn học' : 'Thêm môn học'),
       content: Form(
         key: _khoa,
         child: SingleChildScrollView(
@@ -194,7 +226,7 @@ class _HopThoaiThemMonState extends State<_HopThoaiThemMon> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _cacMau
+                children: cacMauHienThi
                     .map((m) => GestureDetector(
                           onTap: () => setState(() => _mau = m),
                           child: CircleAvatar(
@@ -224,7 +256,7 @@ class _HopThoaiThemMonState extends State<_HopThoaiThemMon> {
               'mau_sac': _mau,
             });
           },
-          child: const Text('Lưu'),
+          child: Text(_laSua ? 'Cập nhật' : 'Lưu'),
         ),
       ],
     );

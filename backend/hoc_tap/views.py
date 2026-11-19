@@ -4,6 +4,7 @@ from rest_framework import generics, mixins, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .ai import tao_giai_thich
 
 from .models import BuoiHoc, HoSo, KeHoachHocTap, KhungGioRanh, MonHoc, NhiemVu
 from .serializers import (
@@ -108,6 +109,12 @@ class KeHoachViewSet(viewsets.ReadOnlyModelViewSet):
             'khong_xep_duoc': ket_qua['khong_xep_duoc'],
             'thu_tu_uu_tien': ket_qua['thu_tu_uu_tien'],
         })
+
+    @action(detail=True, methods=['post'], url_path='giai-thich')
+    def giai_thich(self, request, pk=None):
+        """Nhờ AI giải thích/gợi ý kế hoạch; AI lỗi thì dùng phương án dự phòng."""
+        ke_hoach = self.get_object()
+        return Response(tao_giai_thich(ke_hoach))
 
 
 class BuoiHocViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'dich_vu_api.dart';
@@ -21,9 +23,11 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
   List<dynamic> _dsBuoi = [];
   List<dynamic> _khongXepDuoc = [];
   Map<int, String> _tenNhiemVu = {};
+  Map<String, dynamic>? _giaiThich;
   DateTime? _ngayChon;
   bool _dangTai = true;
   bool _dangXuLy = false;
+  bool _dangHoiAi = false;
   String? _loi;
 
   @override
@@ -56,6 +60,23 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
     _ngayChon = (!homNay.isBefore(dau) && !homNay.isAfter(cuoi)) ? homNay : dau;
   }
 
+  /// Đọc phần giải thích AI từ nhiều dạng dữ liệu (chuỗi JSON hoặc Map).
+  Map<String, dynamic>? _docGiaiThich(dynamic goc) {
+    try {
+      dynamic v = goc;
+      if (v is String) {
+        if (v.trim().isEmpty) return null;
+        v = jsonDecode(v);
+      }
+      if (v is Map<String, dynamic>) {
+        if (v.containsKey('tom_tat')) return v;
+        if (v.containsKey('giai_thich')) return _docGiaiThich(v['giai_thich']);
+        if (v.containsKey('tom_tat_ai')) return _docGiaiThich(v['tom_tat_ai']);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _tai() async {
     setState(() {
       _dangTai = true;
@@ -68,6 +89,7 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
         setState(() {
           _keHoach = null;
           _dsBuoi = [];
+          _giaiThich = null;
         });
         return;
       }
@@ -107,6 +129,7 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
       _keHoach = kh;
       _dsBuoi = (kh['danh_sach_buoi_hoc'] as List<dynamic>?) ?? [];
       _khongXepDuoc = (kq['khong_xep_duoc'] as List<dynamic>?) ?? [];
+      _giaiThich = _docGiaiThich(kh['tom_tat_ai']);
       _chonNgayMacDinh();
     });
   }
@@ -150,6 +173,27 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
     }
   }
 
+  Future<void> _hoiAi() async {
+    final kh = _keHoach;
+    if (kh == null) return;
+    setState(() => _dangHoiAi = true);
+    try {
+      final kq =
+          await DichVuApi.tao('/api/ke-hoach/${kh['id']}/giai-thich/', {});
+      final gt = _docGiaiThich(kq);
+      if (!mounted) return;
+      setState(() => _giaiThich = gt);
+      if (gt == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Không đọc được phản hồi AI.')));
+      }
+    } catch (loi) {
+      if (mounted) await xuLyLoi(context, loi);
+    } finally {
+      if (mounted) setState(() => _dangHoiAi = false);
+    }
+  }
+
   Future<void> _doiTrangThaiBuoi(Map<String, dynamic> buoi, String moi) async {
     try {
       await DichVuApi.capNhat(
@@ -189,7 +233,7 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
     return Column(
       children: [
         _hangNut(),
-        if (_dangXuLy) const LinearProgressIndicator(),
+        if (_dangXuLy || _dangHoiAi) const LinearProgressIndicator(),
         if (_keHoach == null)
           Expanded(
             child: ListView(children: [
@@ -207,23 +251,39 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
   }
 
   Widget _hangNut() {
+    final khongBam = _dangXuLy || _dangHoiAi;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: _dangXuLy ? null : _taoKeHoach,
-              icon: const Icon(Icons.auto_awesome),
-              label: const Text('Tạo kế hoạch'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: khongBam ? null : _taoKeHoach,
+                  icon: const Icon(Icons.auto_awesome),
+                  label: const Text('Tạo kế hoạch'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: (khongBam || _keHoach == null) ? null : _xepLai,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Xếp lại lịch'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: (_dangXuLy || _keHoach == null) ? null : _xepLai,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Xếp lại lịch'),
+              onPressed: (khongBam || _keHoach == null) ? null : _hoiAi,
+              icon: const Icon(Icons.psychology_alt_outlined),
+              label: Text(_dangHoiAi
+                  ? 'AI đang phân tích...'
+                  : 'AI giải thích kế hoạch'),
             ),
           ),
         ],
@@ -244,7 +304,7 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
     return kq;
   }
 
-    Widget _thanhNgay() {
+  Widget _thanhNgay() {
     final cacNgay = _cacNgay();
     return SizedBox(
       height: 84,
@@ -293,6 +353,225 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
     );
   }
 
+  /// Thẻ động lực: lời chào theo giờ + câu động viên theo tiến độ.
+  Widget _theDongLuc() {
+    final bayGio = DateTime.now();
+    final gioHienTai = bayGio.hour;
+    final homNay = _chiNgay(bayGio);
+
+    String loiChao;
+    IconData bieuTuongGio;
+    if (gioHienTai < 11) {
+      loiChao = 'Chào buổi sáng, baby!';
+      bieuTuongGio = Icons.wb_sunny;
+    } else if (gioHienTai < 14) {
+      loiChao = 'Chào buổi trưa, baby!';
+      bieuTuongGio = Icons.wb_sunny;
+    } else if (gioHienTai < 18) {
+      loiChao = 'Chào buổi chiều, baby!';
+      bieuTuongGio = Icons.wb_twilight;
+    } else {
+      loiChao = 'Chào buổi tối, baby!';
+      bieuTuongGio = Icons.nights_stay;
+    }
+
+    var xong = 0;
+    var tong = 0;
+    var xongHomNay = 0;
+    for (final e in _dsBuoi) {
+      final b = e as Map<String, dynamic>;
+      tong++;
+      if (b['trang_thai'] == 'hoan_thanh') {
+        xong++;
+        final bd = DateTime.parse(b['thoi_gian_bat_dau'] as String).toLocal();
+        if (_chiNgay(bd) == homNay) xongHomNay++;
+      }
+    }
+    final tiLe = tong == 0 ? 0.0 : xong / tong;
+
+    String cauDongVien;
+    IconData bieuTuongMuc;
+    if (tong == 0 || xong == 0) {
+      cauDongVien = 'Bắt đầu buổi học đầu tiên thôi nào!';
+      bieuTuongMuc = Icons.flag;
+    } else if (tiLe < 0.5) {
+      cauDongVien = 'Có tiến bộ rồi, cố lên nhé!';
+      bieuTuongMuc = Icons.trending_up;
+    } else if (tiLe < 1) {
+      cauDongVien = 'Bà đang làm rất tốt, giữ vững nhé!';
+      bieuTuongMuc = Icons.local_fire_department;
+    } else {
+      cauDongVien = 'Tuyệt vời! Bà đã hoàn thành hết rồi!';
+      bieuTuongMuc = Icons.emoji_events;
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF039BE5), Color(0xFF4FC3F7)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: Colors.white,
+            child: Icon(bieuTuongMuc, size: 32, color: const Color(0xFFFF9800)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(bieuTuongGio, size: 18, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(loiChao,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                ]),
+                const SizedBox(height: 4),
+                Text(cauDongVien,
+                    style: const TextStyle(color: Colors.white, fontSize: 15)),
+                const SizedBox(height: 4),
+                Text('Hôm nay bà đã hoàn thành $xongHomNay buổi',
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Thẻ thống kê tiến độ, tính từ danh sách buổi học đã tải.
+  Widget _theThongKe() {
+    var xong = 0;
+    var boLo = 0;
+    var duKien = 0;
+    for (final e in _dsBuoi) {
+      final tt = (e as Map<String, dynamic>)['trang_thai'];
+      if (tt == 'hoan_thanh') {
+        xong++;
+      } else if (tt == 'bo_lo') {
+        boLo++;
+      } else {
+        duKien++;
+      }
+    }
+    final tong = xong + boLo + duKien;
+    final tiLe = tong == 0 ? 0.0 : xong / tong;
+    final phanTram = (tiLe * 100).round();
+
+    return theMuc(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(children: [
+              Icon(Icons.bar_chart, color: Color(0xFF039BE5)),
+              SizedBox(width: 8),
+              Text('Thống kê tiến độ',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ]),
+            const SizedBox(height: 10),
+            Text('Đã hoàn thành $xong/$tong buổi ($phanTram%)',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(value: tiLe, minHeight: 8),
+            ),
+            const SizedBox(height: 8),
+            Text('Bỏ lỡ: $boLo · Còn dự kiến: $duKien',
+                style: const TextStyle(color: Colors.black54)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _theGiaiThich() {
+    final gt = _giaiThich!;
+    final laDuPhong = gt['nguon'] == 'du_phong';
+    final goiY = (gt['goi_y'] as List<dynamic>?) ?? [];
+    final canhBao = (gt['canh_bao'] as List<dynamic>?) ?? [];
+
+    final noiDung = <Widget>[
+      Row(children: [
+        const Icon(Icons.psychology_alt_outlined, color: Color(0xFF039BE5)),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Text('AI giải thích kế hoạch',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        IconButton(
+          tooltip: 'Đóng',
+          icon: const Icon(Icons.close, size: 20),
+          onPressed: () => setState(() => _giaiThich = null),
+        ),
+      ]),
+    ];
+
+    if (laDuPhong) {
+      noiDung.add(const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Text('AI không khả dụng, đây là giải thích tạo tự động từ quy tắc.',
+            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black54)),
+      ));
+    }
+
+    noiDung.add(Text((gt['tom_tat'] as String?) ?? ''));
+
+    if (goiY.isNotEmpty) {
+      noiDung.add(const SizedBox(height: 10));
+      noiDung.add(const Text('Gợi ý',
+          style: TextStyle(fontWeight: FontWeight.w600)));
+      for (final g in goiY) {
+        noiDung.add(Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('• $g'),
+        ));
+      }
+    }
+
+    if (canhBao.isNotEmpty) {
+      noiDung.add(const SizedBox(height: 10));
+      noiDung.add(const Row(children: [
+        Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+        SizedBox(width: 6),
+        Text('Cảnh báo', style: TextStyle(fontWeight: FontWeight.w600)),
+      ]));
+      for (final c in canhBao) {
+        noiDung.add(Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('• $c'),
+        ));
+      }
+    }
+
+    return theMuc(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: noiDung,
+        ),
+      ),
+    );
+  }
+
   Widget _danhSachBuoi() {
     final ngay = _ngayChon;
     final cacBuoi = _dsBuoi
@@ -307,6 +586,14 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
           .compareTo(b['thoi_gian_bat_dau'] as String));
 
     final cacThe = <Widget>[];
+
+    cacThe.add(_theDongLuc());
+    cacThe.add(_theThongKe());
+
+    if (_giaiThich != null) {
+      cacThe.add(_theGiaiThich());
+    }
+
     if (cacBuoi.isEmpty) {
       cacThe.add(const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
@@ -406,7 +693,8 @@ class _ManHinhKeHoachState extends State<ManHinhKeHoach> {
                             fontWeight: FontWeight.w600, fontSize: 16)),
                     Text((b['ten_mon'] as String?) ?? ''),
                     const SizedBox(height: 4),
-                    Text('${_gio(bd)} - ${_gio(kt)} ($phut phút)'),
+                    Text(
+                        '${_thuNgan[bd.weekday - 1]}, ${bd.day}/${bd.month} · ${_gio(bd)} - ${_gio(kt)} ($phut phút)'),
                     const SizedBox(height: 8),
                     phanDuoi,
                   ],
